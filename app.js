@@ -3,11 +3,10 @@ const path = require("path")
 const express = require("express")
 const cors = require("cors")
 const { wiki } = require("./wiki")
-const { db_user } = require("./logs/logs")
 
 const LOG_FILE = "logs/access-log.txt"
 const ERRLOG_FILE = "logs/error-log.txt"
-const LOG_DB = "logs/logs.js"
+const LOG_DB = "logs/logs.json"
 const IP_LOOPBACK = "localhost"
 const IP_LOCAL = "192.168.0.10" // my local ip on my network
 const PORT = 3333
@@ -40,23 +39,54 @@ const shower = async (req, res, next) => {
 }
 
 // Middleware for checking if user exists
-const userChecker = (req, res, next) => {
-  const username = req.body.username
-  if (db_user.hasOwnProperty(username)) {
-    next()
-  } else {
-    res.status(401).send("Username or password invalid.")
+const userChecker = async (req, res, next) => {
+  try {
+    const username = req.body.username
+    const usersJson = await fsPromises.readFile(LOG_DB, "UTF-8")
+    const users = JSON.parse(usersJson)
+    if (users.hasOwnProperty(username)) {
+      next()
+    } else {
+      res.status(401).send("Username or password invalid")
+    }
+  } catch (e) {
+    res.status(401).send("Something went wrong")
   }
 }
 
 // Middleware for checking if password is correct
-const passwordChecker = (req, res, next) => {
-  const username = req.body.username
-  const password = req.body.password
-  if (db_user[username] === password) {
+const passwordChecker = async (req, res, next) => {
+  try {
+    const username = req.body.username
+    const password = req.body.password
+    const usersJson = await fsPromises.readFile(LOG_DB, "UTF-8")
+    const users = JSON.parse(usersJson)
+    if (users[username].password === password) {
+      next()
+    } else {
+      res.status(401).send("Username or password invalid")
+    }
+  } catch (e) {
+    res.status(401).send("Something went wrong")
+  }
+}
+
+// Middleware to register
+const register = async (req, res, next) => {
+  try {
+    const email = req.body.email
+    const username = req.body.username
+    const password = req.body.password
+
+    const usersJson = await fsPromises.readFile(LOG_DB, "UTF-8")
+    const users = JSON.parse(usersJson)
+
+    users[username] = { email: email, password: password }
+    const newUsers = JSON.stringify(users)
+    fs.writeFile(LOG_DB, newUsers)
     next()
-  } else {
-    res.status(401).send("Username or password invalid.")
+  } catch (e) {
+    res.status(401).send("Cannot be registered")
   }
 }
 
@@ -74,11 +104,10 @@ app.use(express.static(path.join(__dirname, "build")))
 // Configure express to use these 2 middlewares for /login route only
 app.use("/login", userChecker)
 app.use("/login", passwordChecker)
+app.use("/signup", register)
 
 app.post("/signup", (req, res) => {
   let username = req.body.username
-  let password = req.body.password
-  db_user[username] = password
   res.send({ message: `You registered with username ${username}` })
 })
 
